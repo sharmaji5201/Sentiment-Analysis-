@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SentimentLens — Social Media Classifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    /* ── TOKENS ─────────────────────────────────────────── */
+    :root {
+      --bg:       #0a0c10;
+      --surface:  #111318;
+      --border:   #1e2229;
+      --muted:    #3a3f4a;
+      --text:     #e8eaf0;
+      --dim:      #6b7280;
+
+      --pos:      #00e5a0;
+      --pos-bg:   rgba(0,229,160,.08);
+      --pos-glow: rgba(0,229,160,.25);
+
+      --neg:      #ff4d6d;
+      --neg-bg:   rgba(255,77,109,.08);
+      --neg-glow: rgba(255,77,109,.25);
+
+      --neu:      #fbbf24;
+      --neu-bg:   rgba(251,191,36,.08);
+      --neu-glow: rgba(251,191,36,.25);
+
+      --accent:   #6366f1;
+      --acc-glow: rgba(99,102,241,.35);
+
+      --radius:   14px;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'DM Sans', sans-serif;
+      --display: 'Syne', sans-serif;
+    }
+
+    /* ── RESET ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── BACKGROUND MESH ────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(0,229,160,.07) 0%, transparent 60%);
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── GRID TEXTURE ───────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── LAYOUT ─────────────────────────────────────────── */
+    .wrap {
+      position: relative; z-index: 1;
+      max-width: 900px; margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── HEADER ─────────────────────────────────────────── */
+    header {
+      padding: 56px 0 40px;
+      display: flex; align-items: flex-end; gap: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 48px;
+    }
+    .logo-mark {
+      width: 52px; height: 52px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), #818cf8);
+      display: grid; place-items: center;
+      font-size: 26px; flex-shrink: 0;
+      box-shadow: 0 0 28px var(--acc-glow);
+    }
+    .logo-text { flex: 1; }
+    .logo-text h1 {
+      font-family: var(--display);
+      font-size: clamp(1.6rem, 4vw, 2.3rem);
+      font-weight: 800; letter-spacing: -.02em;
+      line-height: 1;
+    }
+    .logo-text p {
+      color: var(--dim); font-size: .85rem; margin-top: 5px;
+      font-family: var(--mono); letter-spacing: .04em;
+    }
+    .badge {
+      font-family: var(--mono); font-size: .7rem;
+      padding: 4px 10px; border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--dim); white-space: nowrap;
+      margin-bottom: 4px;
+    }
+
+    /* ── LABEL CHIPS ────────────────────────────────────── */
+    .label-row {
+      display: flex; gap: 12px; margin-bottom: 36px; flex-wrap: wrap;
+    }
+    .chip {
+      font-family: var(--mono); font-size: .78rem;
+      padding: 6px 14px; border-radius: 20px;
+      border: 1px solid; display: flex; align-items: center; gap: 7px;
+      font-weight: 500;
+    }
+    .chip-pos { border-color: var(--pos); color: var(--pos); background: var(--pos-bg); }
+    .chip-neu { border-color: var(--neu); color: var(--neu); background: var(--neu-bg); }
+    .chip-neg { border-color: var(--neg); color: var(--neg); background: var(--neg-bg); }
+    .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* ── CARD ───────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 30px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-family: var(--display); font-size: .95rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: var(--dim); margin-bottom: 18px;
+    }
+
+    /* ── INPUT AREA ─────────────────────────────────────── */
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--sans); font-size: .95rem; line-height: 1.6;
+      padding: 14px 16px;
+      resize: vertical;
+      transition: border-color .2s, box-shadow .2s;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99,102,241,.15);
+    }
+    textarea::placeholder { color: var(--muted); }
+
+    .input-meta {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-top: 10px;
+    }
+    #charCount { font-family: var(--mono); font-size: .75rem; color: var(--dim); }
+
+    /* ── BUTTONS ────────────────────────────────────────── */
+    .btn-row { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+    button {
+      font-family: var(--display); font-weight: 700; font-size: .88rem;
+      border: none; border-radius: 9px; cursor: pointer;
+      padding: 11px 22px; letter-spacing: .02em;
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    button:active { transform: scale(.97); }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 18px var(--acc-glow);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 28px var(--acc-glow); opacity: .93; }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border); color: var(--dim);
+    }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── RESULT PANEL ───────────────────────────────────── */
+    #resultBox {
+      display: none;
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      border: 1px solid;
+      margin-top: 20px;
+      animation: slideIn .3s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    #resultBox.pos { border-color: var(--pos); background: var(--pos-bg); box-shadow: 0 0 40px var(--pos-glow); }
+    #resultBox.neu { border-color: var(--neu); background: var(--neu-bg); box-shadow: 0 0 40px var(--neu-glow); }
+    #resultBox.neg { border-color: var(--neg); background: var(--neg-bg); box-shadow: 0 0 40px var(--neg-glow); }
+
+    .result-top { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+    .result-emoji { font-size: 2.8rem; line-height: 1; }
+    .result-main {}
+    .result-label {
+      font-family: var(--display); font-size: 1.5rem; font-weight: 800;
+      letter-spacing: -.02em; line-height: 1;
+    }
+    .result-code {
+      font-family: var(--mono); font-size: .8rem; margin-top: 4px;
+      opacity: .7;
+    }
+
+    /* Score bar */
+    .score-bar-wrap { margin: 14px 0 6px; }
+    .score-bar-label {
+      font-family: var(--mono); font-size: .72rem; color: var(--dim);
+      display: flex; justify-content: space-between; margin-bottom: 6px;
+    }
+    .score-bar-track {
+      height: 6px; border-radius: 3px; background: rgba(255,255,255,.07);
+      position: relative; overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%; border-radius: 3px;
+      transition: width .5s cubic-bezier(.4,0,.2,1);
+    }
+    #resultBox.pos .score-bar-fill { background: var(--pos); }
+    #resultBox.neu .score-bar-fill { background: var(--neu); }
+    #resultBox.neg .score-bar-fill { background: var(--neg); }
+
+    /* Details grid */
+    .detail-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px; margin-top: 16px;
+    }
+    .detail-cell {
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .detail-cell .lbl { font-family: var(--mono); font-size: .65rem; color: var(--dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .06em; }
+    .detail-cell .val { font-family: var(--mono); font-size: .9rem; font-weight: 500; }
+
+    /* ── VOTES ──────────────────────────────────────────── */
+    .votes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .vote-pill {
+      font-family: var(--mono); font-size: .75rem;
+      padding: 4px 11px; border-radius: 20px; border: 1px solid var(--border);
+    }
+
+    /* ── BATCH SECTION ──────────────────────────────────── */
+    #batchResults { display: none; margin-top: 24px; }
+    .batch-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 14px;
+      animation: slideIn .25s ease;
+      transition: border-color .2s;
+    }
+    .batch-item:hover { border-color: var(--muted); }
+    .batch-item.pos { border-left: 3px solid var(--pos); }
+    .batch-item.neu { border-left: 3px solid var(--neu); }
+    .batch-item.neg { border-left: 3px solid var(--neg); }
+    .bi-emoji { font-size: 1.5rem; flex-shrink: 0; }
+    .bi-info { flex: 1; min-width: 0; }
+    .bi-comment { font-size: .88rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bi-meta { font-family: var(--mono); font-size: .72rem; color: var(--dim); margin-top: 3px; }
+    .bi-label { font-family: var(--mono); font-size: .78rem; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+    .bi-label.pos { color: var(--pos); }
+    .bi-label.neu { color: var(--neu); }
+    .bi-label.neg { color: var(--neg); }
+
+    /* ── HISTORY TABLE ──────────────────────────────────── */
+    #historySection { display: none; }
+    .history-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { border-bottom: 1px solid var(--border); }
+    th {
+      font-family: var(--mono); font-size: .72rem; font-weight: 500;
+      color: var(--dim); text-transform: uppercase; letter-spacing: .06em;
+      padding: 8px 12px; text-align: left;
+    }
+    td {
+      padding: 10px 12px; font-size: .85rem; border-bottom: 1px solid rgba(255,255,255,.04);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      font-family: var(--mono); font-size: .72rem; padding: 2px 8px;
+      border-radius: 20px; border: 1px solid;
+    }
+    .tag.pos { border-color: var(--pos); color: var(--pos); }
+    .tag.neu { border-color: var(--neu); color: var(--neu); }
+    .tag.neg { border-color: var(--neg); color: var(--neg); }
+
+    /* ── STATS BAR ──────────────────────────────────────── */
+    .stats-bar {
+      display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .stat-pill {
+      font-family: var(--mono); font-size: .78rem;
+      padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border); color: var(--dim);
+    }
+    .stat-pill span { font-weight: 500; color: var(--text); margin-left: 4px; }
+
+    /* ── LOADER ─────────────────────────────────────────── */
+    .loader {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.15);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .6s linear infinite; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── API STATUS ─────────────────────────────────────── */
+    .api-note {
+      font-family: var(--mono); font-size: .75rem; color: var(--dim);
+      background: rgba(255,255,255,.03); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 20px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .api-note .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pos); flex-shrink: 0; }
+    .api-note .dot.warn { background: var(--neu); }
+
+    /* ── RESPONSIVE ─────────────────────────────────────── */
+    @media (max-width: 560px) {
+      header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .btn-row { flex-direction: column; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── HEADER ───────────────────────────────────────────── -->
+  <header>
+    <div class="logo-mark">🔬</div>
+    <div class="logo-text">
+      <h1>SentimentLens</h1>
+      <p>Social Media Comment Classifier</p>
+    </div>
+    <div class="badge">v1.0 · VADER + TextBlob</div>
+  </header>
+
+  <!-- ── LABEL KEY ────────────────────────────────────────── -->
+  <div class="label-row">
+    <div class="chip chip-pos"><div class="chip-dot"></div>Positive · label <code>+1</code></div>
+    <div class="chip chip-neu"><div class="chip-dot"></div>Neutral · label <code>0</code></div>
+    <div class="chip chip-neg"><div class="chip-dot"></div>Negative · label <code>-1</code></div>
+  </div>
+
+  <!-- ── API STATUS NOTE ───────────────────────────────────── -->
+  <div class="api-note" id="apiNote">
+    <div class="dot warn" id="apiDot"></div>
+    <span id="apiNoteText">Running in standalone mode (JS classifier). Start <code>app.py</code> for full Python ensemble.</span>
+  </div>
+
+  <!-- ── SINGLE COMMENT ────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">Analyse a Comment</div>
+    <textarea id="commentInput" placeholder="Type or paste a social media comment…&#10;e.g. &quot;This product is absolutely amazing, loved every bit of it! 😍&quot;"></textarea>
+    <div class="input-meta">
+      <span id="charCount">0 / 500</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" id="analyseBtn" onclick="analyse()">Analyse</button>
+      <button class="btn-ghost" onclick="clearSingle()">Clear</button>
+    </div>
+
+    <!-- Result -->
+    <div id="resultBox">
+      <div class="result-top">
+        <div class="result-emoji" id="resEmoji"></div>
+        <div class="result-main">
+          <div class="result-label" id="resLabel"></div>
+          <div class="result-code" id="resCode"></div>
+        </div>
+      </div>
+
+      <div class="score-bar-wrap">
+        <div class="score-bar-label">
+          <span>Compound Score</span>
+          <span id="resScore"></span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" id="resBar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="detail-grid" id="detailGrid"></div>
+      <div class="votes" id="resVotes"></div>
+    </div>
+  </div>
+
+  <!-- ── BATCH SECTION ──────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">Batch Analysis</div>
+    <textarea id="batchInput" placeholder="Enter one comment per line…&#10;&#10;Great product, totally worth it!&#10;Worst experience ever, never again.&#10;It was okay, nothing special." style="min-height:130px;"></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" id="batchBtn" onclick="analyseBatch()">Analyse All</button>
+      <button class="btn-ghost" onclick="clearBatch()">Clear</button>
+    </div>
+
+    <div id="batchResults"></div>
+  </div>
+
+  <!-- ── HISTORY ──────────────────────────────────────────── -->
+  <div class="card" id="historySection">
+    <div class="history-header">
+      <div class="card-title" style="margin-bottom:0">History</div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="stats-bar" id="statsBar"></div>
+        <button class="btn-ghost" style="padding:6px 14px;font-size:.78rem" onclick="clearHistory()">Clear history</button>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Comment</th>
+          <th>Sentiment</th>
+          <th>Label</th>
+          <th>Score</th>
+          <th>Method</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+/* ════════════════════════════════════════════════════════
+   JS-SIDE SENTIMENT (works offline; Python API preferred)
+════════════════════════════════════════════════════════ */
+const POS_WORDS = new Set([
+  "good","great","excellent","amazing","awesome","love","loved","wonderful",
+  "fantastic","happy","best","perfect","beautiful","enjoy","enjoyed","brilliant",
+  "outstanding","superb","nice","helpful","positive","like","liked","cool",
+  "incredible","wow","splendid","terrific","delightful","pleasant","glad",
+  "thankful","grateful","excited","thrilled","impressive","recommend","top",
+  "winning","win","success","successful","yay","yes","👍","😊","😍","🎉",
+  "❤️","🔥","💯","👏","✅","laughing","funny","haha","lol","lmao","fantastic",
+  "breathtaking","clever","smart","genius","caring","blessed","charming"
+]);
+
+const NEG_WORDS = new Set([
+  "bad","terrible","awful","horrible","hate","hated","worst","ugly","poor",
+  "useless","garbage","trash","disappointing","disappointed","failure","fail",
+  "failed","annoying","annoyed","frustrating","frustrated","angry","mad","sad",
+  "unhappy","disgusting","disgusted","pathetic","stupid","idiotic","wrong",
+  "error","broken","scam","fraud","lies","lie","lied","fake","never","waste",
+  "wasted","boring","bored","dislike","no","nope","dreadful","nightmare",
+  "terrible","toxic","ridiculous","shame","shameful","😡","😢","👎","🤮",
+  "💔","😤","ugh","yikes","disgusted","horrendous","atrocious","defective",
+  "faulty","unreliable","overpriced","misleading","dishonest","cheating"
+]);
+
+const NEGATION = new Set(["not","no","never","don't","isn't","wasn't",
+  "couldn't","won't","neither","nobody","nothing","nowhere","dont","cant",
+  "isnt","wasnt","couldnt","wont","shouldnt","wouldn't","wouldnt"]);
+
+function jsClassify(text) {
+  if (!text.trim()) return { label: 0, sentiment: "Neutral", score: 0, method: "rule-based" };
+
+  const words = text.toLowerCase().match(/[\w']+|[^\w\s]/g) || [];
+  let pos = 0, neg = 0;
+
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const negated = i > 0 && NEGATION.has(words[i - 1]);
+    if (POS_WORDS.has(w)) { negated ? neg++ : pos++; }
+    else if (NEG_WORDS.has(w)) { negated ? pos++ : neg++; }
+  }
+
+  const total = pos + neg;
+  const score = total === 0 ? 0 : (pos - neg) / total;
+
+  // Exclamation / question boost
+  const excl = (text.match(/!/g) || []).length;
+  const boost = Math.min(excl * 0.05, 0.2);
+  const finalScore = Math.max(-1, Math.min(1, score + (score > 0 ? boost : score < 0 ? -boost : 0)));
+
+  let label, sentiment;
+  if (finalScore > 0.1)  { label = 1;  sentiment = "Positive"; }
+  else if (finalScore < -0.1) { label = -1; sentiment = "Negative"; }
+  else { label = 0; sentiment = "Neutral"; }
+
+  return { label, sentiment, score: +finalScore.toFixed(4), method: "rule-based (JS)" };
+}
+
+/* ════════════════════════════════════════════════════════
+   API + FALLBACK LOGIC
+════════════════════════════════════════════════════════ */
+const API = "http://localhost:5000";
+let useAPI = false;
+
+async function checkAPI() {
+  try {
+    const r = await fetch(API + "/health", { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+      const d = await r.json();
+      useAPI = true;
+      const dot = document.getElementById("apiDot");
+      dot.classList.remove("warn");
+      let libs = [];
+      if (d.vader)    libs.push("VADER");
+      if (d.textblob) libs.push("TextBlob");
+      libs.push("rule-based");
+      document.getElementById("apiNoteText").innerHTML =
+        `Python API connected · Ensemble: <strong>${libs.join(" + ")}</strong>`;
+    }
+  } catch {}
+}
+
+async function callAPI(comment) {
+  const r = await fetch(API + "/classify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ comment }),
+    signal: AbortSignal.timeout(5000)
+  });
+  return r.json();
+}
+
+async function callBatchAPI(comments) {
+  const r = await fetch(API + "/classify-batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ comments }),
+    signal: AbortSignal.timeout(10000)
+  });
+  return r.json();
+}
+
+/* ════════════════════════════════════════════════════════
+   DISPLAY HELPERS
+════════════════════════════════════════════════════════ */
+function cls(label) {
+  return label === 1 ? "pos" : label === -1 ? "neg" : "neu";
+}
+function emoji(label) {
+  return label === 1 ? "😊" : label === -1 ? "😠" : "😐";
+}
+function labelName(label) {
+  return label === 1 ? "Positive" : label === -1 ? "Negative" : "Neutral";
+}
+
+// Score → bar width (0-100%)
+function scoreToWidth(score) {
+  // score is -1 to 1; map to 0-100
+  return Math.round(((score + 1) / 2) * 100);
+}
+
+function showResult(data) {
+  const box = document.getElementById("resultBox");
+  const c = cls(data.label);
+  box.className = c;
+  box.style.display = "block";
+
+  document.getElementById("resEmoji").textContent = emoji(data.label);
+  document.getElementById("resLabel").textContent = data.sentiment;
+  document.getElementById("resCode").textContent =
+    `label = ${data.label > 0 ? "+" : ""}${data.label}  ·  score = ${data.score}  ·  ${data.method || ""}`;
+
+  document.getElementById("resScore").textContent = data.score;
+  document.getElementById("resBar").style.width = scoreToWidth(data.score) + "%";
+
+  // Detail cells
+  const grid = document.getElementById("detailGrid");
+  grid.innerHTML = "";
+  const cells = [];
+  if (data.details) {
+    if (data.details.vader) {
+      const v = data.details.vader;
+      cells.push(["VADER score", v.score]);
+      if (v.pos !== undefined) cells.push(["Positive%", v.pos]);
+      if (v.neu !== undefined) cells.push(["Neutral%",  v.neu]);
+      if (v.neg !== undefined) cells.push(["Negative%", v.neg]);
+    }
+    if (data.details.textblob) {
+      const t = data.details.textblob;
+      cells.push(["TextBlob score", t.score]);
+      cells.push(["Subjectivity", t.subjectivity]);
+    }
+    if (data.details.rule_based) {
+      cells.push(["Rule-based score", data.details.rule_based.score]);
+    }
+  }
+  if (!cells.length) {
+    cells.push(["Score", data.score]);
+    cells.push(["Method", data.method]);
+  }
+  cells.forEach(([l, v]) => {
+    grid.innerHTML += `<div class="detail-cell"><div class="lbl">${l}</div><div class="val">${v}</div></div>`;
+  });
+
+  // Votes
+  const votesEl = document.getElementById("resVotes");
+  votesEl.innerHTML = "";
+  if (data.votes) {
+    const v = data.votes;
+    votesEl.innerHTML =
+      `<span class="vote-pill">👍 Pos votes: ${v.positive}</span>` +
+      `<span class="vote-pill">😐 Neu votes: ${v.neutral}</span>` +
+      `<span class="vote-pill">👎 Neg votes: ${v.negative}</span>`;
+  }
+}
+
+/* ════════════════════════════════════════════════════════
+   HISTORY
+════════════════════════════════════════════════════════ */
+const history = [];
+
+function addToHistory(comment, result) {
+  history.unshift({ comment, ...result, ts: new Date().toLocaleTimeString() });
+  renderHistory();
+}
+
+function renderHistory() {
+  const section = document.getElementById("historySection");
+  const tbody = document.getElementById("historyBody");
+  if (!history.length) { section.style.display = "none"; return; }
+  section.style.display = "block";
+
+  // Stats
+  const pos = history.filter(h => h.label === 1).length;
+  const neg = history.filter(h => h.label === -1).length;
+  const neu = history.filter(h => h.label === 0).length;
+  document.getElementById("statsBar").innerHTML =
+    `<div class="stat-pill">Total<span>${history.length}</span></div>` +
+    `<div class="stat-pill" style="color:var(--pos)">Pos<span>${pos}</span></div>` +
+    `<div class="stat-pill" style="color:var(--neu)">Neu<span>${neu}</span></div>` +
+    `<div class="stat-pill" style="color:var(--neg)">Neg<span>${neg}</span></div>`;
+
+  tbody.innerHTML = history.map(h => `
+    <tr>
+      <td title="${h.comment}">${h.comment.length > 60 ? h.comment.slice(0, 60) + "…" : h.comment}</td>
+      <td>${emoji(h.label)} ${h.sentiment}</td>
+      <td><span class="tag ${cls(h.label)}">${h.label > 0 ? "+" : ""}${h.label}</span></td>
+      <td><code style="font-family:var(--mono);font-size:.8rem">${h.score}</code></td>
+      <td style="color:var(--dim);font-size:.8rem">${h.method || ""}</td>
+    </tr>
+  `).join("");
+}
+
+function clearHistory() {
+  history.length = 0;
+  renderHistory();
+}
+
+/* ════════════════════════════════════════════════════════
+   ACTIONS
+════════════════════════════════════════════════════════ */
+async function analyse() {
+  const input = document.getElementById("commentInput");
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+
+  const btn = document.getElementById("analyseBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span> Analysing…';
+
+  try {
+    let result;
+    if (useAPI) {
+      result = await callAPI(text);
+    } else {
+      await new Promise(r => setTimeout(r, 350)); // simulate
+      result = jsClassify(text);
+    }
+    showResult(result);
+    addToHistory(text, result);
+  } catch (e) {
+    console.warn("API error, falling back to JS:", e);
+    const result = jsClassify(text);
+    showResult(result);
+    addToHistory(text, result);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Analyse";
+  }
+}
+
+async function analyseBatch() {
+  const input = document.getElementById("batchInput");
+  const lines = input.value.split("\n").map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { input.focus(); return; }
+
+  const btn = document.getElementById("batchBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader"></span> Processing…';
+
+  let results;
+  try {
+    if (useAPI) {
+      results = await callBatchAPI(lines);
+    } else {
+      await new Promise(r => setTimeout(r, 400));
+      results = lines.map(c => ({ comment: c, ...jsClassify(c) }));
+    }
+  } catch {
+    results = lines.map(c => ({ comment: c, ...jsClassify(c) }));
+  }
+
+  const container = document.getElementById("batchResults");
+  container.style.display = "block";
+  container.innerHTML = results.map(r => `
+    <div class="batch-item ${cls(r.label)}">
+      <div class="bi-emoji">${emoji(r.label)}</div>
+      <div class="bi-info">
+        <div class="bi-comment" title="${r.comment}">${r.comment}</div>
+        <div class="bi-meta">score: ${r.score} · ${r.method || ""}</div>
+      </div>
+      <div class="bi-label ${cls(r.label)}">${r.label > 0 ? "+" : ""}${r.label} · ${r.sentiment}</div>
+    </div>
+  `).join("");
+
+  results.forEach(r => addToHistory(r.comment, r));
+
+  btn.disabled = false;
+  btn.textContent = "Analyse All";
+}
+
+function clearSingle() {
+  document.getElementById("commentInput").value = "";
+  document.getElementById("resultBox").style.display = "none";
+  document.getElementById("charCount").textContent = "0 / 500";
+}
+
+function clearBatch() {
+  document.getElementById("batchInput").value = "";
+  document.getElementById("batchResults").style.display = "none";
+}
+
+/* ════════════════════════════════════════════════════════
+   CHAR COUNTER + KEYBOARD SHORTCUT
+════════════════════════════════════════════════════════ */
+document.getElementById("commentInput").addEventListener("input", function () {
+  const len = this.value.length;
+  document.getElementById("charCount").textContent = `${len} / 500`;
+  if (len > 500) this.value = this.value.slice(0, 500);
+});
+
+document.getElementById("commentInput").addEventListener("keydown", function (e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") analyse();
+});
+
+/* ════════════════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════════════════ */
+checkAPI();
+</script>
+</body>
+</html>
